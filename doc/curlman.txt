@@ -1,0 +1,138 @@
+*curlman.txt*   A Postman-style API client for Neovim
+
+==============================================================================
+CONTENTS                                                     *curlman-contents*
+
+  1. Introduction ......................... |curlman-introduction|
+  2. Requirements ......................... |curlman-requirements|
+  3. Installation ......................... |curlman-installation|
+  4. Setup & configuration ................ |curlman-setup|
+  5. Commands ............................. |curlman-commands|
+  6. Workspace ............................ |curlman-workspace|
+  7. Variables & secrets .................. |curlman-variables|
+  8. Telescope ............................ |curlman-telescope|
+
+==============================================================================
+1. INTRODUCTION                                          *curlman-introduction*
+
+curlman reads Postman Collection v2.1 exports, sends the requests with `curl`,
+and shows responses — status, timing, size — either in a quick pane or a
+two-panel workspace where each request keeps its own response history you can
+diff, filter, and save.
+
+The only hard dependency is `curl`. `jq` is used if present; `node` is only
+needed for the (planned) pre-request/test script runner.
+
+==============================================================================
+2. REQUIREMENTS                                          *curlman-requirements*
+
+  - Neovim 0.8+ (0.10+ uses |vim.system()|, older falls back to |jobstart()|)
+  - `curl` on $PATH
+  - Optional: `jq`, and telescope.nvim (+ telescope-ui-select)
+
+==============================================================================
+3. INSTALLATION                                          *curlman-installation*
+
+With lazy.nvim: >lua
+    {
+      "robbiehirsch/curlman.nvim",
+      dependencies = { "nvim-telescope/telescope.nvim" }, -- optional
+      config = function()
+        require("curlman").setup({})
+      end,
+    }
+<
+With packer.nvim: >lua
+    use({ "robbiehirsch/curlman.nvim", config = function()
+      require("curlman").setup({})
+    end })
+<
+==============================================================================
+4. SETUP & CONFIGURATION                                        *curlman-setup*
+
+                                                              *curlman.setup()*
+require("curlman").setup({opts})
+
+Call once. Creates the |curlman-commands|, loads any configured collections and
+secrets, and (optionally) installs default keymaps. Full defaults: >lua
+    require("curlman").setup({
+      collection      = nil,   -- path or list of paths to *.postman_collection.json
+      collection_dirs = {},
+      environment     = nil,
+      secrets_file = vim.fn.stdpath("data") .. "/curlman.local.json",
+      shell_env = true,
+      shell_env_prefix = "",
+      prompt_missing = true,
+      curl = {
+        connect_timeout = 10, max_time = 30,
+        follow_redirects = true, insecure = false,
+        http_version = nil, extra_args = {},
+      },
+      ui = {
+        split = "vertical", size = 0.5,
+        left_width = 0.34, preview_lines = 12,
+        body_width = 0.85, body_height = 0.85,
+        pretty_json = true, jq_pretty = true,
+      },
+      history = { enabled = true, max_recent = 10, autosave = false },
+      keymaps = false, -- true installs <leader>C* maps
+    })
+<
+==============================================================================
+5. COMMANDS                                                  *curlman-commands*
+
+                                                                    *:Curlman*
+:Curlman            Pick a request and send it (quick pane).
+                                                                  *:CurlmanUI*
+:CurlmanUI          Toggle the two-panel workspace.
+                                                                 *:CurlmanRun*
+:CurlmanRun         Re-send the last request.
+                                                                *:CurlmanLoad*
+:CurlmanLoad [f]    Load a collection; no arg opens the project load menu.
+:CurlmanLoadEnv [f] Load an environment.
+:CurlmanEnv         Choose the active environment.
+:CurlmanInfo        Timing + response headers for the last response.
+:CurlmanDiff        Diff the last request's responses.
+:CurlmanHistory     Open the workspace.
+:CurlmanClear       Clear all history.
+:CurlmanSave        Save the last response to a file.
+:CurlmanCopy [k]    Copy request|response|both to a buffer.
+:CurlmanJq [expr]   Filter the last response through jq.
+:CurlmanReload      Reload collections & secrets.
+:CurlmanDemo        Load the bundled demo collection.
+
+==============================================================================
+6. WORKSPACE                                                *curlman-workspace*
+
+Left panel (configs): <CR> run request / fold / edit variable, `e` edit var,
+`o` reset overrides, `y` copy request as curl, `R` reload, `D` remove, `l`
+load. Variables show their source: `·env`, `·set` (override), `·needs value`.
+
+Right panel (requests & history): <CR> open response / fold, `t` cycle the
+latest-response preview (truncated -> full -> hidden), `y` copy, `x` clear this
+request, `X` clear all, `c`/`C` cap, `d` diff, `s` save, `i` info.
+
+`q`/`<Esc>` close, `?` help. In the diff view, `q`/`gt` returns.
+
+==============================================================================
+7. VARIABLES & SECRETS                                      *curlman-variables*
+
+{{variable}} placeholders resolve in order (first hit wins): in-memory
+overrides > session values > secrets file > shell env > active environment >
+collection variables > dynamic ({{$guid}}, {{$timestamp}}, {{$isoTimestamp}},
+{{$randomInt}}). Anything unresolved at send time is prompted for.
+
+The secrets file (`secrets_file`) is a gitignored JSON map, defaulting outside
+your config so tokens never get committed. Names containing token/secret/
+password/key are masked in the UI.
+
+==============================================================================
+8. TELESCOPE                                                *curlman-telescope*
+
+Installing telescope-ui-select makes every curlman prompt a Telescope picker.
+The bundled extension adds, after
+`require("telescope").load_extension("curlman")`: >
+    :Telescope curlman requests   fuzzy-find a request (preview: resolved curl)
+    :Telescope curlman history    browse responses (preview: the body)
+<
+ vim:tw=78:ts=8:ft=help:norl:

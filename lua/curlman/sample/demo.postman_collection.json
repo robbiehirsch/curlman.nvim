@@ -1,0 +1,113 @@
+{
+  "info": {
+    "name": "curlman demo",
+    "description": "A small sample collection so you can try curlman immediately. It targets postman-echo.com, which echoes your request back. Load it with :CurlmanDemo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://postman-echo.com" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET simple",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/get?hello=world",
+              "host": ["{{base_url}}"],
+              "path": ["get"],
+              "query": [
+                { "key": "hello", "value": "world" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET with query params",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/get?page=1&limit={{limit}}",
+              "host": ["{{base_url}}"],
+              "path": ["get"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "{{limit}}" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Write",
+      "item": [
+        {
+          "name": "POST json body",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ada\",\n  \"role\": \"engineer\",\n  \"request_id\": \"{{$guid}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/post",
+              "host": ["{{base_url}}"],
+              "path": ["post"]
+            }
+          }
+        },
+        {
+          "name": "POST form urlencoded",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "username", "value": "ada" },
+                { "key": "team", "value": "platform" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/post",
+              "host": ["{{base_url}}"],
+              "path": ["post"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Basic auth (overrides collection bearer)",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "basic",
+          "basic": [
+            { "key": "username", "value": "postman" },
+            { "key": "password", "value": "password" }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/basic-auth",
+          "host": ["{{base_url}}"],
+          "path": ["basic-auth"]
+        }
+      }
+    }
+  ]
+}

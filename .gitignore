@@ -1,0 +1,11 @@
+# Neovim / Lua
+*.luac
+tags
+
+# OS
+.DS_Store
+Thumbs.db
+
+# local scratch
+*.local.json
+/tmp/

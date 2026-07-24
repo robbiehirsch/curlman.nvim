@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  stylua:
+    name: format (stylua)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+          args: --check lua/
+
+  luacheck:
+    name: lint (luacheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.1"
+      - uses: leafo/gh-actions-luarocks@v4
+      - run: luarocks install luacheck
+      - run: luacheck lua/
+
+  smoke:
+    name: headless nvim smoke test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        nvim: ["stable", "nightly"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.nvim }}
+      - name: require + setup + commands exist
+        run: |
+          nvim --headless -u NONE \
+            -c "set runtimepath+=." \
+            -c "lua require('curlman').setup({})" \
+            -c "lua assert(vim.fn.exists(':Curlman') == 2, ':Curlman not created')" \
+            -c "lua assert(vim.fn.exists(':CurlmanUI') == 2, ':CurlmanUI not created')" \
+            -c "lua require('curlman.postman'); require('curlman.curl'); require('curlman.workspace')" \
+            -c "qa!"
+      - name: parse the bundled sample collection
+        run: |
+          nvim --headless -u NONE \
+            -c "set runtimepath+=." \
+            -c "lua local f=vim.api.nvim_get_runtime_file('lua/curlman/sample/demo.postman_collection.json',false)[1]; local c=require('curlman.postman').parse_collection(io.open(f):read('*a'),'demo'); assert(#c.requests==5, 'expected 5 requests, got '..#c.requests)" \
+            -c "qa!"
