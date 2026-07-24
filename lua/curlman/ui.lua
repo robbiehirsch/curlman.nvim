@@ -62,7 +62,8 @@ local function build_winbar(result)
     parts[#parts + 1] = "%#CurlmanDim# " .. table.concat(dim, " · ") .. " "
   else
     parts[#parts + 1] = "%#CurlmanStatusErr# ERROR "
-    parts[#parts + 1] = "%#CurlmanDim# " .. wb_escape(result.stderr ~= "" and result.stderr or ("exit " .. tostring(result.exit_code))) .. " "
+    local msg = result.stderr ~= "" and result.stderr or ("exit " .. tostring(result.exit_code))
+    parts[#parts + 1] = "%#CurlmanDim# " .. wb_escape(msg) .. " "
   end
   return table.concat(parts) .. "%#Normal#"
 end
@@ -379,7 +380,8 @@ function M.to_buffer(kind, entry, cfg)
     return
   end
   local req = entry.request or {}
-  local lines, ft = {}, "text"
+  local lines = {}
+  local ft
   local function add(l) lines[#lines + 1] = l end
   local function curl_cmd()
     for _, l in ipairs(util.lines(curl.to_command_string(req))) do add(l) end

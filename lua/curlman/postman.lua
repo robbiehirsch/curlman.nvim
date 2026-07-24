@@ -1,8 +1,6 @@
 -- curlman.postman — parse Postman Collection v2.1 exports and environment
 -- exports into flat, plugin-friendly tables. Depends on `vim.json.decode`
--- (built into Neovim) plus curlman.util. No third-party libraries.
-
-local util = require("curlman.util")
+-- (built into Neovim). No third-party libraries.
 
 local M = {}
 

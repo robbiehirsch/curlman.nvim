@@ -388,8 +388,13 @@ local function create_commands()
     if o.args ~= "" then M.load_collection(o.args) else M.load_menu() end
   end, { nargs = "?", complete = "file", desc = "curlman: load a collection (menu if no arg)" })
   cmd("CurlmanLoadEnv", function(o)
-    if o.args ~= "" then M.load_environment(o.args)
-    else vim.ui.input({ prompt = "environment file: ", completion = "file" }, function(p) if p and p ~= "" then M.load_environment(p) end end) end
+    if o.args ~= "" then
+      M.load_environment(o.args)
+    else
+      vim.ui.input({ prompt = "environment file: ", completion = "file" }, function(p)
+        if p and p ~= "" then M.load_environment(p) end
+      end)
+    end
   end, { nargs = "?", complete = "file", desc = "curlman: load an environment" })
 
   cmd("CurlmanEnv", function() M.pick_env() end, { desc = "curlman: choose environment" })
@@ -399,7 +404,11 @@ local function create_commands()
     else util.warn("no responses yet") end
   end, { desc = "curlman: diff the last request's responses" })
   cmd("CurlmanHistory", function() M.toggle_ui() end, { desc = "curlman: open the workspace/history" })
-  cmd("CurlmanClear", function() history.clear_all(); if workspace.is_open() then workspace.redraw() end; util.info("history cleared") end, { desc = "curlman: clear all history" })
+  cmd("CurlmanClear", function()
+    history.clear_all()
+    if workspace.is_open() then workspace.redraw() end
+    util.info("history cleared")
+  end, { desc = "curlman: clear all history" })
   cmd("CurlmanSave", function()
     if not M.state.last_entry then util.warn("no response to save"); return end
     local e = M.state.last_entry
