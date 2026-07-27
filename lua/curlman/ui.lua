@@ -68,6 +68,19 @@ local function build_winbar(result)
   return table.concat(parts) .. "%#Normal#"
 end
 
+-- :tabnew/:vnew create an empty listed buffer before we swap our scratch
+-- buffer into the window. Wipe that placeholder, or every open/close cycle
+-- leaks one more [No Name] entry into :ls.
+local function wipe_placeholder(placeholder, replacement)
+  if placeholder
+      and placeholder ~= replacement
+      and vim.api.nvim_buf_is_valid(placeholder)
+      and vim.api.nvim_buf_get_name(placeholder) == ""
+      and not vim.bo[placeholder].modified then
+    pcall(vim.api.nvim_buf_delete, placeholder, { force = true })
+  end
+end
+
 --- Ensure the response window/buffer exists and is valid; return win, buf.
 local function ensure_win(cfg)
   local s = M.state
@@ -84,7 +97,9 @@ local function ensure_win(cfg)
   local horizontal = cfg.ui and cfg.ui.split == "horizontal"
   vim.cmd(horizontal and "botright new" or "botright vnew")
   local win = vim.api.nvim_get_current_win()
+  local placeholder = vim.api.nvim_win_get_buf(win)
   vim.api.nvim_win_set_buf(win, buf)
+  wipe_placeholder(placeholder, buf)
   local size = (cfg.ui and cfg.ui.size) or 0.5
   if horizontal then
     vim.api.nvim_win_set_height(win, math.max(8, math.floor(vim.o.lines * size)))
@@ -264,8 +279,10 @@ function M.diff(entry_a, entry_b)
     return
   end
   vim.cmd("tabnew")
+  local placeholder = vim.api.nvim_get_current_buf()
   local buf_a = entry_buffer(entry_a, "diff-A")
   vim.api.nvim_win_set_buf(0, buf_a)
+  wipe_placeholder(placeholder, buf_a)
   vim.wo.winbar = "%#CurlmanDim# A: " .. wb_escape(history.entry_label(entry_a)) .. "   (q/gt: back)"
   vim.cmd("diffthis")
   vim.cmd("vertical rightbelow split")

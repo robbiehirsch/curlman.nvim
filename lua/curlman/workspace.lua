@@ -424,6 +424,19 @@ local function setup_keymaps(buf, side)
   end
 end
 
+-- :tabnew/:vnew create an empty listed buffer before we swap our scratch
+-- buffer into the window. Wipe that placeholder, or every open/close cycle
+-- leaks one more [No Name] entry into :ls.
+local function wipe_placeholder(placeholder, replacement)
+  if placeholder
+      and placeholder ~= replacement
+      and vim.api.nvim_buf_is_valid(placeholder)
+      and vim.api.nvim_buf_get_name(placeholder) == ""
+      and not vim.bo[placeholder].modified then
+    pcall(vim.api.nvim_buf_delete, placeholder, { force = true })
+  end
+end
+
 local function make_panel_buf(name)
   local buf = vim.api.nvim_create_buf(false, true)
   pcall(vim.api.nvim_buf_set_name, buf, name)
@@ -444,10 +457,12 @@ function M.open(ctx)
   end
   vim.cmd("tabnew")
   M.tab = vim.api.nvim_get_current_tabpage()
+  local placeholder = vim.api.nvim_get_current_buf() -- :tabnew's empty buffer
 
   local lbuf = make_panel_buf("curlman://configs")
   local lwin = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(lwin, lbuf)
+  wipe_placeholder(placeholder, lbuf)
 
   vim.cmd("vertical rightbelow split")
   local rbuf = make_panel_buf("curlman://requests")
