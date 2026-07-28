@@ -131,6 +131,7 @@ function M.entry_label(e)
   local parts = {}
   if e.method then parts[#parts + 1] = e.method end
   parts[#parts + 1] = e.name or "response"
+  if e.profile then parts[#parts + 1] = "[" .. e.profile .. "]" end
   if e.status then parts[#parts + 1] = tostring(e.status) end
   if e.time_total then parts[#parts + 1] = util.human_time(e.time_total) end
   return table.concat(parts, " · ") .. "  (" .. (e.time_str or "") .. ")"

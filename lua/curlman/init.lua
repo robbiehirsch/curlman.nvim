@@ -17,6 +17,7 @@ local ui = require("curlman.ui")
 local history = require("curlman.history")
 local discover = require("curlman.discover")
 local workspace = require("curlman.workspace")
+local profiles = require("curlman.profiles")
 local util = require("curlman.util")
 
 local M = {}
@@ -106,8 +107,23 @@ end
 
 --------------------------------------------------------------------- resolving
 
-local function context_for(req)
+local function context_for(req, profile)
   local col = req.collection and M.state.collections[req.collection]
+  if profile then
+    -- multi-profile runs: the profile REPLACES the env layer, and in-memory
+    -- overrides/session tweaks are deliberately excluded so every profile
+    -- resolves from the same clean slate (secrets & shell env still apply —
+    -- tokens usually live there).
+    return {
+      overrides = {},
+      session = {},
+      secrets = M.state.secrets,
+      env = profile.values or {},
+      collection = col and col.vars_map or {},
+      allow_shell = M.cfg.shell_env,
+      shell_prefix = M.cfg.shell_env_prefix,
+    }
+  end
   local env = M.state.current_env and M.state.environments[M.state.current_env]
   return {
     overrides = col and col.overrides or {},
@@ -211,7 +227,173 @@ function M.reset_overrides(config_name)
   if col then col.overrides = {}; util.info("reset overrides for '" .. config_name .. "'") end
 end
 
---------------------------------------------------------------- history actions
+------------------------------------------------------------ profiles & multi-run
+
+--- The effective variable table a collection resolves against right now
+--- (override > session > env > collection), limited to referenced keys.
+--- This is what :CurlmanProfileSave snapshots — it makes today's unsaved
+--- in-memory tweaks durable.
+function M.effective_vars(config_name)
+  local col = M.state.collections[config_name]
+  if not col then return {} end
+  local env = M.state.current_env and M.state.environments[M.state.current_env]
+  local out = {}
+  for key in pairs(col.referenced or {}) do
+    local v = (col.overrides and col.overrides[key])
+      or M.state.session_vars[key]
+      or (env and env.map[key])
+      or col.vars_map[key]
+    if v ~= nil then out[key] = tostring(v) end
+  end
+  return out
+end
+
+--- Run one request once per named profile (sequentially, so history order is
+--- deterministic); entries are tagged with their profile and handed to the
+--- compare UI (auto-diff for 2, pair picker for 3+).
+function M.run_multi(req, profile_names, on_done)
+  local entries, failed = {}, {}
+  local function step(i)
+    if i > #profile_names then
+      if #failed > 0 then util.warn("profile(s) not found: " .. table.concat(failed, ", ")) end
+      if on_done then on_done(entries) else ui.compare_entries(entries) end
+      return
+    end
+    local pname = profile_names[i]
+    local prof = profiles.get(pname)
+    if not prof then
+      failed[#failed + 1] = pname
+      return step(i + 1)
+    end
+    local resolved, unresolved = vars.resolve_request(req, context_for(req, prof))
+    if #unresolved > 0 then
+      util.warn("[" .. pname .. "] unresolved: {{" .. table.concat(unresolved, "}}, {{") .. "}}")
+    end
+    util.info("→ [" .. pname .. "] " .. resolved.method .. " " .. resolved.url)
+    curl.execute(resolved, M.cfg.curl, function(result)
+      local lines = ui.format_lines(result, M.cfg)
+      local _, entry = history.record(resolved, result, lines)
+      entry.profile = pname
+      M.state.last_request = req
+      M.state.last_result = result
+      M.state.last_entry = entry
+      entries[#entries + 1] = entry
+      if workspace.is_open() then workspace.redraw() end
+      vim.schedule(function() step(i + 1) end)
+    end)
+  end
+  step(1)
+end
+
+--- Pick a request, multi-select profiles, fan out.
+function M.run_with()
+  if #profiles.names() == 0 then
+    util.warn("no profiles yet — :CurlmanProfileSave <name> snapshots the current variables into one")
+    return
+  end
+  ui.pick_request(M.state.requests, function(req)
+    ui.pick_profiles_multi("run '" .. (req.display or req.name) .. "' with:", function(chosen)
+      M.run_multi(req, chosen)
+    end)
+  end)
+end
+
+--- Snapshot current effective variables into a named profile.
+function M.profile_save(name)
+  local function snapshot(nm, col_name)
+    local path, err = profiles.save(nm, col_name and M.effective_vars(col_name) or {})
+    if path then util.info("profile '" .. nm .. "' saved → " .. path)
+    else util.err("profile save failed: " .. tostring(err)) end
+  end
+  local function with_collection(nm)
+    local order = M.state.config_order
+    if #order > 1 then
+      vim.ui.select(order, { prompt = "snapshot variables of which collection?" }, function(c)
+        if c then snapshot(nm, c) end
+      end)
+    else
+      snapshot(nm, order[1])
+    end
+  end
+  if name and name ~= "" then
+    with_collection(name)
+  else
+    vim.ui.input({ prompt = "profile name: " }, function(nm)
+      if nm and nm ~= "" then with_collection(nm) end
+    end)
+  end
+end
+
+--- Manage menu: every profile action in one place.
+function M.manage_profiles()
+  local names = profiles.names_fav_first()
+  local items = {}
+  for _, n in ipairs(names) do items[#items + 1] = { kind = "profile", name = n } end
+  items[#items + 1] = { kind = "new" }
+  vim.ui.select(items, {
+    prompt = "curlman profiles",
+    format_item = function(it)
+      if it.kind == "new" then return "[ new profile from current variables… ]" end
+      local p = profiles.get(it.name)
+      local n = 0
+      for _ in pairs(p and p.values or {}) do n = n + 1 end
+      return (profiles.is_fav_profile(it.name) and "★ " or "  ") .. it.name .. "  (" .. n .. " vars)"
+    end,
+  }, function(it)
+    if not it then return end
+    if it.kind == "new" then return M.profile_save(nil) end
+    local name = it.name
+    local actions = { "edit file", "rename", "duplicate", "save a copy to…", "toggle favourite", "delete" }
+    vim.ui.select(actions, { prompt = "profile '" .. name .. "'" }, function(a)
+      if a == "edit file" then
+        local prof = profiles.get(name)
+        if prof and prof.path then vim.cmd("edit " .. vim.fn.fnameescape(prof.path)) end
+      elseif a == "rename" then
+        vim.ui.input({ prompt = "rename to: ", default = name }, function(nm)
+          if nm and nm ~= "" and nm ~= name then
+            local _, err = profiles.rename(name, nm)
+            if err then util.err(err) else util.info("renamed → " .. nm) end
+          end
+        end)
+      elseif a == "duplicate" then
+        vim.ui.input({ prompt = "duplicate as: ", default = name .. "-copy" }, function(nm)
+          if nm and nm ~= "" then
+            local _, err = profiles.duplicate(name, nm)
+            if err then util.err(err) else util.info("duplicated → " .. nm) end
+          end
+        end)
+      elseif a == "save a copy to…" then
+        local prof = profiles.get(name)
+        vim.ui.input({ prompt = "save copy to: ", default = vim.fn.getcwd() .. "/" .. util.slug(name) .. ".postman_environment.json", completion = "file" }, function(path)
+          if path and path ~= "" and prof then
+            local ok, err = profiles.save(name, prof.values, path)
+            if ok then util.info("copy saved → " .. path) else util.err(tostring(err)) end
+          end
+        end)
+      elseif a == "toggle favourite" then
+        local fav = profiles.toggle_fav_profile(name)
+        util.info(name .. (fav and " ★ favourited" or " unfavourited"))
+      elseif a == "delete" then
+        vim.ui.select({ "Yes — delete '" .. name .. "'", "No" }, { prompt = "really delete?" }, function(c)
+          if c and c:sub(1, 1) == "Y" then
+            profiles.delete(name)
+            util.info("deleted '" .. name .. "'")
+          end
+        end)
+      end
+    end)
+  end)
+end
+
+--- Toggle ★ on an endpoint (request). Favourites float to the top of :Curlman.
+function M.fav_endpoint()
+  ui.pick_request(M.state.requests, function(r)
+    local fav = profiles.toggle_fav_endpoint(r)
+    util.info((r.display or r.name) .. (fav and " ★ favourited" or " unfavourited"))
+  end, { prompt = "toggle favourite endpoint" })
+end
+
+-------------------------------------------------------------- history actions
 
 function M.set_cap(key)
   vim.ui.select({ "2", "5", "10", "unlimited" }, { prompt = "keep how many responses per request?" }, function(choice)
@@ -433,6 +615,14 @@ local function create_commands()
     M.load_secrets()
     util.info("reloaded collections & secrets")
   end, { desc = "curlman: reload collections & secrets" })
+  cmd("CurlmanProfiles", function() M.manage_profiles() end,
+    { desc = "curlman: manage variable profiles (edit/rename/dup/delete/favourite)" })
+  cmd("CurlmanProfileSave", function(o) M.profile_save(o.args ~= "" and o.args or nil) end,
+    { nargs = "?", desc = "curlman: snapshot current variables into a named profile" })
+  cmd("CurlmanRunWith", function() M.run_with() end,
+    { desc = "curlman: run one request across several profiles and compare" })
+  cmd("CurlmanFav", function() M.fav_endpoint() end,
+    { desc = "curlman: toggle favourite on an endpoint (floats to top of pickers)" })
   cmd("CurlmanDemo", function()
     local col = sample_path("demo.postman_collection.json")
     local env = sample_path("demo.postman_environment.json")
@@ -470,6 +660,14 @@ function M.setup(user_config)
   ui.setup_highlights()
   create_commands()
   discover.load_recent()
+  profiles.setup(M.cfg.profiles)
+  -- editing a profile file (:CurlmanProfiles → edit) hot-reloads the store
+  if M.cfg.profiles and M.cfg.profiles.dir then
+    vim.api.nvim_create_autocmd("BufWritePost", {
+      pattern = vim.fn.fnamemodify(util.expand(M.cfg.profiles.dir), ":p") .. "*.json",
+      callback = function() profiles.load_all() end,
+    })
+  end
   M.load_configured()
   M.load_secrets()
   if M.cfg.keymaps then install_keymaps() end

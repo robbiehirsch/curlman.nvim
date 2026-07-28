@@ -91,6 +91,21 @@ secrets, and (optionally) installs default keymaps. Full defaults: >lua
 :CurlmanLoad [f]    Load a collection; no arg opens the project load menu.
 :CurlmanLoadEnv [f] Load an environment.
 :CurlmanEnv         Choose the active environment.
+
+:CurlmanProfiles    Manage variable profiles: edit the backing file,
+                    rename, duplicate, delete, save a copy to a location,
+                    toggle favourite. Profiles are named variable sets
+                    stored globally as Postman-environment JSON.
+:CurlmanProfileSave [name]
+                    Snapshot the variables a collection currently resolves
+                    against (including unsaved in-memory tweaks) into a
+                    named profile.
+:CurlmanRunWith     Pick a request, multi-select profiles, run it once per
+                    profile; two profiles auto-open a diff tab, three or
+                    more offer a pair picker. History entries are tagged
+                    with the profile name.
+:CurlmanFav         Toggle favourite on an endpoint; favourites float to
+                    the top of pickers (as do favourite profiles).
 :CurlmanInfo        Timing + response headers for the last response.
 :CurlmanDiff        Diff the last request's responses.
 :CurlmanHistory     Open the workspace.

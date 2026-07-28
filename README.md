@@ -131,6 +131,27 @@ uses it. `o` resets a config's overrides. Great for "what does staging return vs
 prod?" without editing files. Overrides win over the environment and collection
 values.
 
+## Profiles & multi-config runs
+
+A **profile** is a named variable set — `dev` / `staging` / `prod` — stored
+globally (one Postman-environment JSON per profile in
+`stdpath("data")/curlman/profiles/`), so it follows you across projects and
+imports/exports cleanly to Postman.
+
+- `:CurlmanProfileSave beta` snapshots the variables a collection currently
+  resolves against — including unsaved in-memory `e` tweaks — into a profile.
+- `:CurlmanProfiles` is the manager: edit the file, rename, duplicate,
+  delete, save a copy to any location, toggle ★ favourite.
+- `:CurlmanRunWith` picks a request, lets you multi-select profiles
+  (☐/☑ toggles, ▶ fires), runs the request once per profile, records each
+  response in history tagged `[profile]`, then compares: exactly two
+  profiles auto-open a side-by-side diff tab; three or more get a pair
+  picker. During profile runs your in-memory overrides are deliberately
+  ignored so every profile resolves from a clean slate (secrets and shell
+  env still apply).
+- `:CurlmanFav` stars an endpoint; ★ endpoints and ★ profiles float to the
+  top of every picker.
+
 ## Per-request history
 
 Every response is filed under the request it came from (keyed by config + method
@@ -225,6 +246,11 @@ your dotfiles repo, so tokens never commit:
 `:CurlmanEnv` `:CurlmanInfo` `:CurlmanDiff` `:CurlmanHistory` `:CurlmanClear`
 `:CurlmanSave` `:CurlmanCopy [request|response|both]` `:CurlmanJq <filter>`
 `:CurlmanReload` `:CurlmanDemo`
+
+:CurlmanProfiles     Manage profiles (edit/rename/dup/delete/copy/favourite)
+:CurlmanProfileSave  Snapshot current variables into a named profile
+:CurlmanRunWith      Run one request across several profiles and compare
+:CurlmanFav          Toggle favourite on an endpoint
 
 ## Corporate certs / proxies
 

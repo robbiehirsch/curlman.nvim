@@ -6,6 +6,7 @@
 local util = require("curlman.util")
 local curl = require("curlman.curl")
 local history = require("curlman.history")
+local profiles = require("curlman.profiles")
 
 local M = {}
 
@@ -162,20 +163,84 @@ function M.show_response(result, lines, cfg)
   vim.wo[win].winbar = build_winbar(result)
 end
 
---- Request picker.
-function M.pick_request(requests, on_choice)
+--- Request picker. Favourite endpoints (:CurlmanFav) float to the top with ★.
+function M.pick_request(requests, on_choice, opts)
   if not requests or #requests == 0 then
     util.warn("no requests loaded — try :CurlmanLoad <file> or :CurlmanDemo")
     return
   end
-  vim.ui.select(requests, {
-    prompt = "curlman: run request",
+  local favs, rest = {}, {}
+  for _, r in ipairs(requests) do
+    if profiles.is_fav_endpoint(r) then favs[#favs + 1] = r else rest[#rest + 1] = r end
+  end
+  for _, r in ipairs(rest) do favs[#favs + 1] = r end
+  vim.ui.select(favs, {
+    prompt = (opts and opts.prompt) or "curlman: run request",
     format_item = function(r)
-      return string.format("%-6s %s", r.method, r.display or r.name)
+      return string.format("%s %-6s %s",
+        profiles.is_fav_endpoint(r) and "★" or " ", r.method, r.display or r.name)
     end,
   }, function(choice)
     if choice then on_choice(choice) end
   end)
+end
+
+--- Multi-select over profiles via repeated vim.ui.select rounds: toggle
+--- entries with ☐/☑, then pick the ▶ row to fire. Favourites float up.
+function M.pick_profiles_multi(prompt, cb)
+  local chosen = {}
+  local function round()
+    local names = profiles.names_fav_first()
+    local items = { { kind = "go" } }
+    for _, n in ipairs(names) do items[#items + 1] = { kind = "profile", name = n } end
+    local count = 0
+    for _ in pairs(chosen) do count = count + 1 end
+    vim.ui.select(items, {
+      prompt = prompt .. "  (" .. count .. " selected)",
+      format_item = function(it)
+        if it.kind == "go" then
+          return count > 0 and ("▶ run with " .. count .. " profile(s)") or "▶ run  (toggle profiles below first)"
+        end
+        return (chosen[it.name] and "☑ " or "☐ ")
+          .. (profiles.is_fav_profile(it.name) and "★ " or "")
+          .. it.name
+      end,
+    }, function(it)
+      if not it then return end
+      if it.kind == "go" then
+        local list = {}
+        for _, n in ipairs(profiles.names_fav_first()) do
+          if chosen[n] then list[#list + 1] = n end
+        end
+        if #list > 0 then cb(list) end
+        return
+      end
+      chosen[it.name] = not chosen[it.name] or nil
+      round()
+    end)
+  end
+  round()
+end
+
+--- Results of a multi-profile run: summary + auto-diff for exactly two,
+--- pair picker for three or more (labels carry the profile name).
+function M.compare_entries(entries)
+  if not entries or #entries == 0 then
+    util.warn("multi-run produced no results")
+    return
+  end
+  local summary = {}
+  for _, e in ipairs(entries) do
+    summary[#summary + 1] = (e.profile or "?") .. "→" .. tostring(e.status or "ERR")
+      .. (e.time_total and (" " .. util.human_time(e.time_total)) or "")
+  end
+  util.info("multi-run:  " .. table.concat(summary, "   "))
+  if #entries < 2 then return end
+  if #entries == 2 then
+    M.diff(entries[1], entries[2])
+    return
+  end
+  M.diff_entries(entries)
 end
 
 --- A floating scratch window. Returns win, buf.

@@ -54,6 +54,14 @@ function M.defaults()
       state_file = state .. "/curlman/recent.json", -- remembers recently-loaded files
     },
 
+    -- PROFILES (named variable sets) -----------------------------------------
+    -- Global store: profiles are dev/staging/prod-style variable sets shared
+    -- across every project. Each is one Postman-environment JSON file.
+    profiles = {
+      dir = data .. "/curlman/profiles",
+      favorites_file = data .. "/curlman/favorites.json",
+    },
+
     -- Install default <leader>a* keymaps. Off by default; Robbie's keymaps.lua
     -- wires these explicitly instead.
     keymaps = false,
