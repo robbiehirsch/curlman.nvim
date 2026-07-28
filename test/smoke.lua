@@ -50,7 +50,7 @@ local function run()
   cm.load_collection(col)
   ok(#cm.state.requests > 0, "demo requests loaded (" .. #cm.state.requests .. ")")
 
-  -- ── profile CRUD ────────────────────────────────────────────────────────
+  -- -- profile CRUD --------------------------------------------------------
   local path = profiles.save("dev", { base_url = "https://dev.example.com", token = "dev-t" })
   ok(path and vim.fn.filereadable(path) == 1, "save: profile file written")
   local env = postman.parse_environment(table.concat(vim.fn.readfile(path), "\n"))
@@ -82,7 +82,7 @@ local function run()
   ok(profiles.get("dev").path:find("/profiles/dev.json", 1, true) ~= nil,
     "save-to-location: canonical store path unchanged")
 
-  -- ── favourites ──────────────────────────────────────────────────────────
+  -- -- favourites ----------------------------------------------------------
   ok(profiles.toggle_fav_profile("prod"), "fav: profile toggled on")
   local r1 = cm.state.requests[1]
   ok(profiles.toggle_fav_endpoint(r1), "fav: endpoint toggled on")
@@ -91,14 +91,14 @@ local function run()
   ok(profiles.is_fav_endpoint(r1), "fav: endpoint persisted")
   eq(profiles.names_fav_first()[1], "prod", "fav: favourite floats to top of profile list")
 
-  -- ── effective_vars snapshot ─────────────────────────────────────────────
+  -- -- effective_vars snapshot ---------------------------------------------
   local cname = cm.state.config_order[1]
   cm.state.collections[cname].overrides = { base_url = "https://override.example.com" }
   local eff = cm.effective_vars(cname)
   eq(eff.base_url, "https://override.example.com", "effective_vars: unsaved override captured")
   cm.state.collections[cname].overrides = {}
 
-  -- ── multi-run: isolation + tagging + compare ────────────────────────────
+  -- -- multi-run: isolation + tagging + compare ----------------------------
   cm.state.collections[cname].overrides = { base_url = "https://SHOULD-NOT-LEAK" }
   local req
   for _, r in ipairs(cm.state.requests) do
@@ -141,7 +141,7 @@ local function run()
   vim.wait(2000, function() return done2 ~= nil end, 10)
   eq(#done2, 1, "multi-run: unknown profile skipped gracefully")
 
-  -- ── picker ordering ─────────────────────────────────────────────────────
+  -- -- picker ordering -----------------------------------------------------
   -- stub vim.ui.select to capture the ordered items pick_request offers
   local offered
   local orig_select = vim.ui.select

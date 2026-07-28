@@ -364,7 +364,8 @@ function M.manage_profiles()
         end)
       elseif a == "save a copy to…" then
         local prof = profiles.get(name)
-        vim.ui.input({ prompt = "save copy to: ", default = vim.fn.getcwd() .. "/" .. util.slug(name) .. ".postman_environment.json", completion = "file" }, function(path)
+        local suggestion = vim.fn.getcwd() .. "/" .. util.slug(name) .. ".postman_environment.json"
+        vim.ui.input({ prompt = "save copy to: ", default = suggestion, completion = "file" }, function(path)
           if path and path ~= "" and prof then
             local ok, err = profiles.save(name, prof.values, path)
             if ok then util.info("copy saved → " .. path) else util.err(tostring(err)) end

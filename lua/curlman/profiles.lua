@@ -58,7 +58,7 @@ function M.save(name, values, path)
   local ok, werr = util.write_file(path, M.encode(name, values))
   if not ok then return nil, werr end
   if canonical or M.profiles[name] == nil then
-    M.profiles[name] = { name = name, values = vim.deepcopy(values or {}), path = canonical and path or M.profiles[name] and M.profiles[name].path or path }
+    M.profiles[name] = { name = name, values = vim.deepcopy(values or {}), path = path }
   else
     M.profiles[name].values = vim.deepcopy(values or {})
   end
