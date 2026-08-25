@@ -218,32 +218,31 @@ end
 
 --- Decide whether one CLI execution counts as a SUCCESS (`result.ok`).
 --
--- This is the only policy call in the module; everything else is mechanical
--- mapping. `result.ok` is load-bearing downstream:
---   * ui.format_lines (ui.lua:145) shows the BODY when ok, and an error dump
---     with stderr when not;
---   * the workspace card / winbar renders failures differently;
---   * init.dispatch only autosaves when ok, and fires util.err when not.
+-- `result.ok` is load-bearing: ui.format_lines shows the body when ok and a
+-- diagnostic dump when not, the workspace card badges failures, and only ok
+-- responses are autosaved.
 --
--- Inputs available on `result`:
---   result.transport_error  string|nil  -- DNS/refused/timeout; no response at all
---   result.status           number|nil  -- HTTP status code
---   result.assertions_passed / .assertions_failed   number
---   result.assertions       list of { name, passed, skipped, message }
--- And `cfg_runner` is the user's `runner` config table, so a policy can be
--- made configurable rather than hardcoded (e.g. cfg_runner.assertions).
+-- Two rules, one settled and one configurable:
 --
--- TODO(robbie): implement. The interesting case is an HTTP 200 whose `pm.test`
--- assertions FAILED. Treating that as ok=true keeps the body visible and makes
--- the CLI behave just like curl, but a red test silently reads as green. Treating
--- it as ok=false surfaces the failure loudly, but format_lines will hide the
--- response body behind an error dump — exactly when you most want to read it.
--- A third option is to let cfg decide ("strict" | "lenient"), or to gate on
--- HTTP status only and let the UI badge assertions separately.
+--  * A transport failure (DNS, refused, TLS, timeout) is NEVER a success.
+--    There is no response at all, so anything else would render a blank pane
+--    and autosave an empty file.
+--  * HTTP status deliberately does NOT decide this. curl exits 0 on a 404 and
+--    records ok = true; the two engines have to agree or the same request's
+--    curl and CLI responses stop being comparable in one history bucket.
+--
+-- What is left genuinely ambiguous is a 200 whose pm.test assertions failed,
+-- so that is `runner.assertions`:
+--    "strict"  (default) a failed assertion fails the response
+--    "lenient"           assertions never affect ok; they are still reported
+-- Either way the assertion detail is rendered above the body, so marking a
+-- response failed never costs you the body you wanted to read.
 function M.classify(result, cfg_runner)
-  return true -- placeholder so the module loads; replace with the real policy
+  if result.transport_error then return false end
+  local policy = (cfg_runner and cfg_runner.assertions) or "strict"
+  if policy == "strict" and (result.assertions_failed or 0) > 0 then return false end
+  return true
 end
-
 
 --- Turn one reporter `execution` into { request, result } in curlman's shape.
 -- `ctx` = { collection, cfg_runner, failures_by_ref, items }.
@@ -292,6 +291,10 @@ function M.execution_to_entry(execution, ctx)
   local body = body_of(response)
   local content_type = headers.map["content-type"]
   local assertions, passed, failed = assertions_of(execution)
+  -- When there is something to explain we prepend a diagnostic block to the
+  -- rendered body, which means the buffer is no longer pure JSON/XML — so the
+  -- filetype has to drop to text or highlighting lies about the content.
+  local diagnostics = (err ~= nil) or (failed > 0)
 
   local result = {
     exit_code = err and 1 or 0,
@@ -309,10 +312,11 @@ function M.execution_to_entry(execution, ctx)
     raw_headers = raw_headers,
     body = body,
     content_type = content_type,
-    filetype = curl.filetype_for(content_type),
+    filetype = diagnostics and "text" or curl.filetype_for(content_type),
     request = request,
     -- CLI-only extras; the curl path simply never sets these.
     via = "postman-cli",
+    diagnostics = diagnostics,
     assertions = assertions,
     assertions_passed = passed,
     assertions_failed = failed,

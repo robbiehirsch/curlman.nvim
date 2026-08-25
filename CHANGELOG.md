@@ -35,5 +35,9 @@ Initial public release.
   do for curl responses — and because buckets are keyed on collection + method
   + name, a CLI response and a curl response for the same request share a
   bucket and can be diffed against each other. Neither CLI is a dependency.
+  Transport failures (DNS, refused, TLS, timeout) are always reported as
+  failures with the underlying error; failed `pm.test` assertions are rendered
+  above the response body rather than replacing it, and whether they fail the
+  response is set by `runner.assertions` ("strict" / "lenient").
 
 [0.1.0]: https://github.com/robbiehirsch/curlman.nvim/releases/tag/v0.1.0

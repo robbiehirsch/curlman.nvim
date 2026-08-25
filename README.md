@@ -204,6 +204,55 @@ The runner is handed a Postman environment file built from curlman's own
 resolved variables, so overrides, the secrets file, shell env and the active
 environment all apply, with the same precedence as a curl send.
 
+### When something fails
+
+A transport failure (DNS, connection refused, TLS, timeout) is never treated as
+a success — there is no response at all, so the pane shows what went wrong:
+
+```
+✗  REQUEST FAILED — no response received
+
+   getaddrinfo ENOTFOUND no-such-host.invalid
+
+   GET https://no-such-host.invalid/x
+```
+
+A failed `pm.test` is the configurable case, since a request can return a
+perfectly good body and still fail its own assertions:
+
+```lua
+runner = { assertions = "strict" }  -- default: a failed assertion fails the response
+runner = { assertions = "lenient" } -- assertions never affect success; still reported
+```
+
+Either way the assertion detail is rendered **above** the body, not instead of
+it, so marking a response failed never costs you the body you wanted to read:
+
+```
+✗  1 of 1 assertions failed
+
+   ✗ this one fails
+       expected 1 to deeply equal 2
+
+──────────────────────────────────────────────────────────
+
+{ "args": { … } }
+```
+
+HTTP status deliberately does *not* decide success: curl exits 0 on a 404 and
+records it as a response, so the CLI does too — otherwise the same request's
+curl and CLI entries would stop being comparable in one history bucket. A clean
+run renders as a pure body, exactly like curl, so JSON highlighting and
+`:CurlmanJq` are unaffected.
+
+The run summary names what broke rather than only counting it:
+
+```
+newman: 2/3 requests ok · 0/1 assertions passed
+  ✗ Failing test — 1 assertion(s) failed
+  ✗ Dead host — getaddrinfo ENOTFOUND no-such-host.invalid
+```
+
 This is deliberately collection-level only; single-request sends stay on curl,
 which is faster and has no startup cost.
 

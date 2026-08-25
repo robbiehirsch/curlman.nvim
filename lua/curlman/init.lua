@@ -381,8 +381,21 @@ function M.run_collection(config_name, folder)
       msg = msg .. string.format(" · %d/%d assertions passed",
         summary.assertions - (summary.assertions_failed or 0), summary.assertions)
     end
-    if (summary.assertions_failed or 0) > 0 or (summary.requests_failed or 0) > 0 then
-      util.warn(msg)
+
+    -- Name what actually broke. A bare count tells you something is wrong but
+    -- not which request, and a collection run can be long enough that scrolling
+    -- the workspace to find the red one is real friction.
+    local bad = {}
+    for _, e in ipairs(entries) do
+      if e.result.transport_error then
+        bad[#bad + 1] = "  ✗ " .. e.request.display .. " — " .. e.result.transport_error
+      elseif (e.result.assertions_failed or 0) > 0 then
+        bad[#bad + 1] = string.format("  ✗ %s — %d assertion(s) failed",
+          e.request.display, e.result.assertions_failed)
+      end
+    end
+    if #bad > 0 then
+      util.warn(msg .. "\n" .. table.concat(bad, "\n"))
     else
       util.info(msg)
     end

@@ -141,8 +141,50 @@ function M.show_running(req, cfg)
   vim.wo[win].winbar = "%#CurlmanDim# ⟳ running " .. wb_escape(req.method .. " " .. (req.name or "")) .. " …"
 end
 
+--- Diagnostics for a Postman CLI execution (`result.diagnostics`).
+--- A transport failure has no body to show at all, and a failed assertion must
+--- not cost you the body you wanted to read — so the detail goes ABOVE the
+--- body rather than replacing it. A clean run renders as a pure body, exactly
+--- like curl, so JSON highlighting and :CurlmanJq are unaffected.
+local function diagnostic_lines(result, cfg)
+  local out = {}
+  local req = result.request or {}
+
+  if result.transport_error then
+    out[#out + 1] = "✗  REQUEST FAILED — no response received"
+    out[#out + 1] = ""
+    out[#out + 1] = "   " .. result.transport_error
+    if req.url and req.url ~= "" then
+      out[#out + 1] = ""
+      out[#out + 1] = "   " .. (req.method or "") .. " " .. req.url
+    end
+    return out
+  end
+
+  local total = (result.assertions_passed or 0) + (result.assertions_failed or 0)
+  out[#out + 1] = string.format("✗  %d of %d assertions failed",
+    result.assertions_failed or 0, total)
+  out[#out + 1] = ""
+  for _, t in ipairs(result.assertions or {}) do
+    if t.skipped then
+      out[#out + 1] = "   ○ " .. t.name .. "   (skipped)"
+    elseif t.passed then
+      out[#out + 1] = "   ✓ " .. t.name
+    else
+      out[#out + 1] = "   ✗ " .. t.name
+      if t.message then out[#out + 1] = "       " .. t.message end
+    end
+  end
+  out[#out + 1] = ""
+  out[#out + 1] = string.rep("─", 58)
+  out[#out + 1] = ""
+  for _, l in ipairs(format_body(result, cfg)) do out[#out + 1] = l end
+  return out
+end
+
 --- Format a curl result into display lines (shared by the pane and by history).
 function M.format_lines(result, cfg)
+  if result.diagnostics then return diagnostic_lines(result, cfg) end
   if result.ok then return format_body(result, cfg) end
   local lines = { "curl exited " .. tostring(result.exit_code), "" }
   for _, l in ipairs(util.lines(result.stderr or "")) do lines[#lines + 1] = l end

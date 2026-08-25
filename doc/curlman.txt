@@ -181,6 +181,19 @@ The runner receives a Postman environment built from curlman's own resolved
 variables (see |curlman-variables|), so overrides, secrets, shell env and the
 active environment all apply with their usual precedence.
 
+FAILURES
+
+A transport failure (DNS, refused, TLS, timeout) is never a success: the pane
+shows "REQUEST FAILED", the error, and the URL. A failed `pm.test` is
+configurable, since the request itself may have returned a good body: >
+    runner = { assertions = "strict" }   -- default: failed assertion fails it
+    runner = { assertions = "lenient" }  -- assertions never affect success
+<
+Either way the assertion detail renders ABOVE the body rather than replacing
+it, so a failed response never costs you the body. HTTP status does not decide
+success — curl exits 0 on a 404, and the two engines must agree or their
+entries stop being comparable in one history bucket.
+
 Options live under `runner` — see |curlman.setup()|. Single-request sends
 always use curl; this is a collection-level operation only.
 

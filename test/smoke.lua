@@ -204,7 +204,10 @@ local function run()
   eq(e1.request.collection, "Demo", "runner: entry tagged with collection")
   eq(e1.result.status, 200, "runner: status mapped")
   eq(e1.result.body, payload, "runner: body decoded onto result")
-  eq(e1.result.filetype, "json", "runner: filetype derived from content-type")
+  -- a failed assertion prepends a diagnostic block, so the buffer is no longer
+  -- pure JSON and the filetype must drop to text or highlighting lies
+  eq(e1.result.filetype, "text", "runner: filetype drops to text when diagnostics are shown")
+  eq(e1.result.diagnostics, true, "runner: failed assertion flags diagnostics")
   eq(e1.result.headers.map["content-type"], "application/json", "runner: header map built")
   ok(e1.result.raw_headers:find("HTTP/1.1 200"), "runner: raw header block reconstructed")
   eq(e1.result.metrics.time_total, 0.25, "runner: responseTime converted to seconds")
@@ -267,6 +270,9 @@ local function run()
   eq(rentries[1].result.body, "hello", "runner(real): Buffer body decoded")
   eq(rentries[1].result.assertions_passed, 1, "runner(real): assertion with no error counts as passed")
   eq(rentries[1].result.transport_error, nil, "runner(real): healthy execution has no transport error")
+  eq(rentries[1].result.diagnostics, false, "runner(real): clean execution needs no diagnostics")
+  eq(rentries[1].result.filetype, "json", "runner(real): clean execution keeps its content-type filetype")
+  eq(rentries[1].result.ok, true, "runner(real): clean execution is a success")
   eq(rentries[2].request.url, "https://nope.invalid/x", "runner(real): dead-host url reconstructed")
   eq(rentries[2].result.transport_error, "getaddrinfo ENOTFOUND nope.invalid",
     "runner(real): message taken from run.failures, not the errno object")
@@ -287,6 +293,47 @@ local function run()
   eq(ae[1].result.transport_error, nil, "runner(real): assertion failure is not a transport error")
   eq(ae[1].result.assertions_failed, 1, "runner(real): assertion failure still counted")
   eq(ae[1].result.status, 200, "runner(real): body/status preserved despite failed assertion")
+
+  -- -- classify: what counts as a failure ----------------------------------
+  -- a transport failure is never a success, whatever the assertion policy
+  eq(rentries[2].result.ok, false, "classify: DNS failure is not a success")
+  eq(rentries[2].result.diagnostics, true, "classify: DNS failure flags diagnostics")
+  local lenient = runner.parse_report(real, "Real", { assertions = "lenient" }, loaded)
+  eq(lenient[2].result.ok, false, "classify: DNS failure fails even under lenient")
+
+  -- a 200 with a failed assertion is the configurable case
+  local strict_a = runner.parse_report(afail, "A", { assertions = "strict" })
+  eq(strict_a[1].result.ok, false, "classify: strict fails a 200 with a failed assertion")
+  local lenient_a = runner.parse_report(afail, "A", { assertions = "lenient" })
+  eq(lenient_a[1].result.ok, true, "classify: lenient passes a 200 with a failed assertion")
+  eq(lenient_a[1].result.diagnostics, true, "classify: lenient still reports the assertion")
+
+  -- HTTP status must NOT decide ok, or curl and CLI stop being comparable
+  local notfound = vim.json.encode({ run = { stats = {}, executions = { {
+    cursor = { position = 0, ref = "n1" }, item = { name = "NF" },
+    request = { method = "GET", url = "https://x.test/nope" },
+    response = { code = 404, status = "Not Found", header = {}, stream = { type = "Buffer", data = to_bytes("{}") } },
+  } } } })
+  local nf = runner.parse_report(notfound, "A", {})
+  eq(nf[1].result.ok, true, "classify: a 404 is a response, not a failure (matches curl)")
+
+  -- -- the DNS error actually renders ----------------------------------------
+  local dns_lines = ui.format_lines(rentries[2].result, cm.cfg)
+  ok(dns_lines[1]:find("REQUEST FAILED", 1, true) ~= nil, "render: DNS failure leads with REQUEST FAILED")
+  local joined = table.concat(dns_lines, "\n")
+  ok(joined:find("getaddrinfo ENOTFOUND nope.invalid", 1, true) ~= nil,
+    "render: the actual DNS error text is shown")
+  ok(joined:find("https://nope.invalid/x", 1, true) ~= nil, "render: the failing URL is shown")
+
+  -- a failed assertion shows the detail AND keeps the body
+  local a_lines = table.concat(ui.format_lines(strict_a[1].result, cm.cfg), "\n")
+  ok(a_lines:find("1 of 1 assertions failed", 1, true) ~= nil, "render: assertion summary shown")
+  ok(a_lines:find("expected 1 to deeply equal 2", 1, true) ~= nil, "render: assertion message shown")
+  ok(a_lines:find("{}", 1, true) ~= nil, "render: the response body is still shown below the diagnostics")
+
+  -- a clean execution renders as a pure body, exactly like curl
+  local clean = table.concat(ui.format_lines(rentries[1].result, cm.cfg), "\n")
+  eq(clean, "hello", "render: a clean execution is just the body, no header")
 
   -- name mismatch (file changed on disk since load) must fall back, not mislabel
   local drifted = runner.parse_report(real, "Real", {}, { { name = "Something Else", display = "X / Y", folder = "X" } })
