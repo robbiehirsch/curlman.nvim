@@ -10,7 +10,8 @@ CONTENTS                                                     *curlman-contents*
   5. Commands ............................. |curlman-commands|
   6. Workspace ............................ |curlman-workspace|
   7. Variables & secrets .................. |curlman-variables|
-  8. Telescope ............................ |curlman-telescope|
+  8. Collection runs (Postman CLI) ........ |curlman-runner|
+  9. Telescope ............................ |curlman-telescope|
 
 ==============================================================================
 1. INTRODUCTION                                          *curlman-introduction*
@@ -67,6 +68,13 @@ secrets, and (optionally) installs default keymaps. Full defaults: >lua
         connect_timeout = 10, max_time = 30,
         follow_redirects = true, insecure = false,
         http_version = nil, extra_args = {},
+      },
+      runner = {              -- :CurlmanRunCollection, see |curlman-runner|
+        mode = "auto",        -- "auto" | "postman" | "newman"
+        assertions = "strict",-- how a failed pm.test affects success
+        bail = false, insecure = false,
+        timeout_request = nil, iteration_data = nil, iteration_count = nil,
+        extra_args = {},
       },
       ui = {
         split = "vertical", size = 0.5,
@@ -142,7 +150,42 @@ your config so tokens never get committed. Names containing token/secret/
 password/key are masked in the UI.
 
 ==============================================================================
-8. TELESCOPE                                                *curlman-telescope*
+8. COLLECTION RUNS (POSTMAN CLI)                               *curlman-runner*
+
+                                                      *:CurlmanRunCollection*
+:CurlmanRunCollection [folder]
+        Run a whole loaded collection through the real Postman collection
+        runner instead of curl, optionally scoped to one folder.
+
+                                                             *:CurlmanRunner*
+:CurlmanRunner
+        Report which runner was found, or how to install one.
+
+curl cannot execute Postman's JS sandbox. The CLIs can, so a collection run
+gives you pre-request/test scripts, `pm.test` assertions, and variables
+chained between requests via `pm.environment.set`.
+
+Either CLI works; `runner.mode` picks one ("auto" prefers the official CLI): >
+    postman   brew install postman/tap/postman-cli
+    newman    npm install -g newman
+<
+Neither is a dependency — without them curlman stays a curl-only client.
+
+Every execution in the run is recorded as an ordinary history entry, so
+saving, capping, organizing and diffing work exactly as for curl responses.
+Buckets are keyed on collection + method + name, so a CLI response and a curl
+response for the SAME request share a bucket and can be diffed against each
+other with `d` in the workspace.
+
+The runner receives a Postman environment built from curlman's own resolved
+variables (see |curlman-variables|), so overrides, secrets, shell env and the
+active environment all apply with their usual precedence.
+
+Options live under `runner` — see |curlman.setup()|. Single-request sends
+always use curl; this is a collection-level operation only.
+
+==============================================================================
+9. TELESCOPE                                                *curlman-telescope*
 
 Installing telescope-ui-select makes every curlman prompt a Telescope picker.
 The bundled extension adds, after

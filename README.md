@@ -17,6 +17,7 @@ if present (nicer pretty-print + `:CurlmanJq`). `node` is only needed for the
 
 - Neovim 0.8+ (0.10+ uses `vim.system`; older falls back to `jobstart`)
 - `curl` on `$PATH`
+- Optional: `postman` CLI or `newman` for collection runs with scripts & assertions (see below)
 - Optional: `jq`; `telescope.nvim` + `telescope-ui-select` for fuzzy pickers and the `:Telescope curlman` extension
 
 ## Installation
@@ -168,6 +169,44 @@ Saving suggests a sibling folder next to the collection file:
     Users-list-20260723-143002-response.json
 ```
 
+## Collection runs via the Postman CLI
+
+curl sends one request and knows nothing about Postman's JS sandbox. When you
+need the sandbox — pre-request/test scripts, `pm.test` assertions, or values
+chained between requests with `pm.environment.set` — curlman can hand the whole
+collection to the real Postman collection runner instead:
+
+```vim
+:CurlmanRunCollection            " run a loaded collection end to end
+:CurlmanRunCollection Auth       " scope the run to one folder
+:CurlmanRunner                   " report which runner was found
+```
+
+It drives either CLI, preferring the official one:
+
+| Runner | Install | Notes |
+| --- | --- | --- |
+| Postman CLI | `brew install postman/tap/postman-cli` | Official, standalone (no node), can report runs to your Postman workspace |
+| newman | `npm install -g newman` | Open source, fully offline, needs node |
+
+Neither is a dependency. With neither installed curlman is exactly what it was
+before — a curl client — and `:CurlmanRunCollection` says so.
+
+**Every execution becomes an ordinary history entry.** Each request in the run
+gets its own bucket, so saving, organizing, capping and diffing all behave
+exactly as they do for curl responses. Because the buckets are keyed on
+collection + method + name, a CLI response and a curl response for the *same*
+request land in the same bucket — so `d` in the workspace will diff **what
+Postman got against what curl got**, which is a fast way to find out that a
+test script was mutating a variable behind your back.
+
+The runner is handed a Postman environment file built from curlman's own
+resolved variables, so overrides, the secrets file, shell env and the active
+environment all apply, with the same precedence as a curl send.
+
+This is deliberately collection-level only; single-request sends stay on curl,
+which is faster and has no startup cost.
+
 ## Telescope
 
 curlman works with or without Telescope. All its transient pickers use the
@@ -251,6 +290,8 @@ your dotfiles repo, so tokens never commit:
 :CurlmanProfileSave  Snapshot current variables into a named profile
 :CurlmanRunWith      Run one request across several profiles and compare
 :CurlmanFav          Toggle favourite on an endpoint
+:CurlmanRunCollection [folder]  Run a whole collection via the Postman CLI/newman
+:CurlmanRunner       Report which collection runner is available
 
 ## Corporate certs / proxies
 
@@ -259,8 +300,9 @@ your dotfiles repo, so tokens never commit:
 
 ## Roadmap
 
-- **Pre-request / test scripts** (Postman JS) via optional `node` with a `pm.*`
-  subset — pending confirmation that `node` is available on the target machine.
+- **Pre-request / test scripts for single-request sends.** Collection runs
+  already execute them via the Postman CLI / newman (see above); doing it for a
+  one-off `:Curlman` send needs an in-process `pm.*` subset on optional `node`.
 
 ## Files
 
@@ -268,6 +310,7 @@ your dotfiles repo, so tokens never commit:
 lua/curlman/
   init.lua        setup(), commands, orchestration
   config.lua      defaults + merge
+  runner.lua      Postman CLI / newman collection runs
   postman.lua     collection / environment parsing
   vars.lua        {{variable}} resolution (+ overrides, dynamic vars)
   curl.lua        build curl argv, run it, parse response; jq wrappers

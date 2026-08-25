@@ -235,6 +235,11 @@ function M.parse_environment(content)
   return nil, "unrecognized environment format"
 end
 
+--- Public: Postman url (string OR structured {protocol,host[],path[],query[]})
+--- -> a URL string. The CLI reporter emits the structured form, so the runner
+--- needs this too.
+M.url_to_string = url_to_string
+
 -- Expose internals for testing.
 M._internal = {
   url_to_string = url_to_string,

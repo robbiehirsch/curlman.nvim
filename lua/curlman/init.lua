@@ -13,6 +13,7 @@ local config = require("curlman.config")
 local postman = require("curlman.postman")
 local vars = require("curlman.vars")
 local curl = require("curlman.curl")
+local runner = require("curlman.runner")
 local ui = require("curlman.ui")
 local history = require("curlman.history")
 local discover = require("curlman.discover")
@@ -283,6 +284,119 @@ function M.run_multi(req, profile_names, on_done)
     end)
   end
   step(1)
+end
+
+-------------------------------------------------------- postman CLI collection run
+
+--- Every variable the CLI should be handed, resolved through curlman's normal
+--- precedence (override > session > secrets > shell > env > collection). We
+--- take the union of every layer's keys rather than only the statically
+--- referenced ones, because scripts in the collection can read variables that
+--- never appear literally as {{var}} anywhere.
+local function runner_env_values(config_name)
+  local col = M.state.collections[config_name]
+  if not col then return {} end
+  local ctx = context_for({ collection = config_name })
+
+  local keys = {}
+  local function add_keys(t) for k in pairs(t or {}) do keys[tostring(k)] = true end end
+  add_keys(col.vars_map)
+  add_keys(ctx.env)
+  add_keys(ctx.secrets)
+  add_keys(ctx.session)
+  add_keys(ctx.overrides)
+  add_keys(col.referenced)
+
+  local out = {}
+  for k in pairs(keys) do
+    -- Reuse resolve_string so precedence (and shell-env fallback) is defined
+    -- in exactly one place rather than duplicated here.
+    local v, unresolved = vars.resolve_string("{{" .. k .. "}}", ctx)
+    if #unresolved == 0 and v ~= nil then out[k] = tostring(v) end
+  end
+  return out
+end
+
+--- Run an entire collection through the Postman CLI / newman.
+--- Each execution in the reporter output is recorded as its own history entry
+--- under the same key curl would have used, so the results are saveable,
+--- organizable and diffable exactly like curl responses — and a CLI run can be
+--- diffed against a curl run of the same request.
+function M.run_collection(config_name, folder)
+  local col = config_name and M.state.collections[config_name]
+  if not col then util.err("config not loaded: " .. tostring(config_name)); return end
+  if not col.source then util.err("'" .. config_name .. "' has no source file to hand the runner"); return end
+
+  local rcfg = M.cfg.runner or {}
+  local kind, derr = runner.detect(rcfg.mode)
+  if not kind then util.err(derr); return end
+
+  -- Hand the CLI a real Postman environment file built from our resolved vars.
+  local env_path = util.tempname() .. ".postman_environment.json"
+  local values = runner_env_values(config_name)
+  local wrote, werr = util.write_file(env_path, profiles.encode(config_name .. " (curlman)", values))
+  if not wrote then util.err("could not write runner environment: " .. tostring(werr)); return end
+
+  util.info("→ [" .. runner.spec(kind).label .. "] running '" .. config_name .. "'"
+    .. (folder and folder ~= "" and (" / " .. folder) or ""))
+
+  runner.run_collection({
+    collection_path = col.source,
+    collection_name = config_name,
+    env_path = env_path,
+    -- lets the runner recover folder paths, so CLI and curl share history buckets
+    items = col.requests,
+    mode = rcfg.mode,
+    folder = folder,
+    bail = rcfg.bail,
+    insecure = rcfg.insecure,
+    iteration_data = rcfg.iteration_data,
+    iteration_count = rcfg.iteration_count,
+    timeout_request = rcfg.timeout_request,
+    extra_args = rcfg.extra_args,
+    runner_cfg = rcfg,
+  }, function(err, entries, summary, meta)
+    os.remove(util.expand(env_path))
+    if err then util.err(err); return end
+
+    for _, e in ipairs(entries) do
+      local lines = ui.format_lines(e.result, M.cfg)
+      local _, entry = history.record(e.request, e.result, lines)
+      entry.via = meta.kind
+      entry.assertions = e.result.assertions
+      M.state.last_request = e.request
+      M.state.last_result = e.result
+      M.state.last_entry = entry
+      if M.cfg.history.enabled and M.cfg.history.autosave and e.result.ok then
+        history.save_entry(entry, history.suggest_save_path(col.source, entry.name, entry.timestamp, entry.filetype))
+      end
+    end
+
+    if workspace.is_open() then workspace.redraw()
+    elseif M.state.last_result then ui.show_response(M.state.last_result, ui.format_lines(M.state.last_result, M.cfg), M.cfg) end
+
+    local msg = string.format("%s: %d/%d requests ok", meta.label,
+      (summary.requests or 0) - (summary.requests_failed or 0), summary.requests or 0)
+    if (summary.assertions or 0) > 0 then
+      msg = msg .. string.format(" · %d/%d assertions passed",
+        summary.assertions - (summary.assertions_failed or 0), summary.assertions)
+    end
+    if (summary.assertions_failed or 0) > 0 or (summary.requests_failed or 0) > 0 then
+      util.warn(msg)
+    else
+      util.info(msg)
+    end
+  end)
+end
+
+--- Pick a loaded collection (or use the only one) and run it through the CLI.
+function M.run_collection_pick(folder)
+  local names = M.state.config_order
+  if #names == 0 then util.warn("no collections loaded — :CurlmanLoad <file> or :CurlmanDemo"); return end
+  if #names == 1 then M.run_collection(names[1], folder); return end
+  vim.ui.select(names, { prompt = "curlman: run collection with the Postman CLI" }, function(choice)
+    if choice then M.run_collection(choice, folder) end
+  end)
 end
 
 --- Pick a request, multi-select profiles, fan out.
@@ -620,6 +734,15 @@ local function create_commands()
     { desc = "curlman: manage variable profiles (edit/rename/dup/delete/favourite)" })
   cmd("CurlmanProfileSave", function(o) M.profile_save(o.args ~= "" and o.args or nil) end,
     { nargs = "?", desc = "curlman: snapshot current variables into a named profile" })
+  cmd("CurlmanRunCollection", function(o)
+    -- Optional arg is a folder name to scope the run to.
+    M.run_collection_pick(o.args ~= "" and o.args or nil)
+  end, { nargs = "?", desc = "curlman: run a whole collection via the Postman CLI / newman" })
+  cmd("CurlmanRunner", function()
+    local kind, derr = runner.detect(M.cfg.runner and M.cfg.runner.mode)
+    if kind then util.info("collection runner: " .. runner.spec(kind).label .. " (" .. kind .. ")")
+    else util.warn(derr) end
+  end, { desc = "curlman: report which Postman collection runner is available" })
   cmd("CurlmanRunWith", function() M.run_with() end,
     { desc = "curlman: run one request across several profiles and compare" })
   cmd("CurlmanFav", function() M.fav_endpoint() end,
