@@ -27,5 +27,17 @@ Initial public release.
 - Project-aware load menu (discovers Postman JSON, floats recently-loaded up).
 - First-class Telescope integration: `telescope-ui-select` routing plus
   `:Telescope curlman requests` / `:Telescope curlman history` with previews.
+- **Collection runs via the Postman CLI or newman** (`:CurlmanRunCollection`,
+  `:CurlmanRunner`). Hands a whole collection to the real Postman collection
+  runner so pre-request/test scripts, `pm.test` assertions, and variables
+  chained with `pm.environment.set` all work. Every execution is recorded as an
+  ordinary history entry, so saving, capping and diffing behave exactly as they
+  do for curl responses — and because buckets are keyed on collection + method
+  + name, a CLI response and a curl response for the same request share a
+  bucket and can be diffed against each other. Neither CLI is a dependency.
+  Transport failures (DNS, refused, TLS, timeout) are always reported as
+  failures with the underlying error; failed `pm.test` assertions are rendered
+  above the response body rather than replacing it, and whether they fail the
+  response is set by `runner.assertions` ("strict" / "lenient").
 
 [0.1.0]: https://github.com/robbiehirsch/curlman.nvim/releases/tag/v0.1.0

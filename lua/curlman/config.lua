@@ -32,6 +32,25 @@ function M.defaults()
       extra_args = {},       -- appended to every curl invocation
     },
 
+    -- POSTMAN CLI RUNNER -----------------------------------------------------
+    -- An optional second engine (:CurlmanRunCollection). Instead of curl it
+    -- shells out to the real Postman collection runner, so pre-request/test
+    -- scripts execute, `pm.environment.set` chains values between requests,
+    -- and `pm.test` assertions run. Results land in the SAME history buckets
+    -- as curl runs, so you can save, organize and diff them identically —
+    -- including diffing a CLI response against a curl one. Collection-level
+    -- only; single-request sends stay on curl.
+    runner = {
+      mode = "auto",         -- "auto" (postman, then newman) | "postman" | "newman"
+      assertions = "strict", -- how a failed pm.test affects ok — see runner.classify
+      bail = false,          -- stop the run at the first failure
+      insecure = false,
+      timeout_request = nil, -- per-request ms, passed as --timeout-request
+      iteration_data = nil,  -- CSV/JSON data file, passed as -d
+      iteration_count = nil, -- passed as -n
+      extra_args = {},       -- appended to every runner invocation
+    },
+
     -- UI ---------------------------------------------------------------------
     ui = {
       split = "vertical",    -- "vertical" | "horizontal" quick response pane
