@@ -175,10 +175,10 @@ local function assertions_of(execution)
       local skipped = a.skipped == true
       local errm = type(a.error) == "table" and (a.error.message or a.error.name) or nil
       local ok = not skipped and errm == nil
-      if skipped then
-        -- skipped assertions count as neither
-      elseif ok then passed = passed + 1
-      else failed = failed + 1 end
+      -- a skipped assertion counts as neither passed nor failed
+      if not skipped then
+        if ok then passed = passed + 1 else failed = failed + 1 end
+      end
       out[#out + 1] = {
         name = tostring(a.assertion or "assertion"),
         passed = ok,
